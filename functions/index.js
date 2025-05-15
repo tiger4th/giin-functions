@@ -31,9 +31,14 @@ exports.scheduledCheckMeetings = functions.pubsub
       if (!lastNotifiedDate || newestDate > lastNotifiedDate) {
         // 全体通知（例: トピック "all"）
         await admin.messaging().sendToTopic("all", {
+        await admin.messaging().send({
+          topic: "all",
           notification: {
             title: "新しい本会議が公開されました",
             body: `日付: ${newestDate}`,
+          },
+          data: {
+            screen: "meeting",
           },
         });
         // Firestoreに最新日付を保存
