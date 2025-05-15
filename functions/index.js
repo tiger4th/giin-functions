@@ -30,7 +30,6 @@ exports.scheduledCheckMeetings = functions.pubsub
       // 4. 新しいデータがあれば通知
       if (!lastNotifiedDate || newestDate > lastNotifiedDate) {
         // 全体通知（例: トピック "all"）
-        await admin.messaging().sendToTopic("all", {
         await admin.messaging().send({
           topic: "all",
           notification: {
