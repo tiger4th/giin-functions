@@ -3,9 +3,23 @@ const admin = require("firebase-admin");
 const fetch = require("node-fetch"); // npm install node-fetch@2
 admin.initializeApp();
 
-const API_URL =
-  "https://kokkai.ndl.go.jp/api/meeting_list?recordPacking=json" +
-  "&nameOfMeeting=%E6%9C%AC%E4%BC%9A%E8%AD%B0";
+/**
+ * 国会APIのURLを生成します
+ * @return {string} APIのURL
+ */
+function getApiUrl() {
+  const today = new Date();
+  const until = today.toISOString().slice(0, 10); // YYYY-MM-DD
+  const fromDate = new Date(today);
+  fromDate.setMonth(fromDate.getMonth() - 1);
+  const from = fromDate.toISOString().slice(0, 10);
+  return (
+    `https://kokkai.ndl.go.jp/api/meeting_list?recordPacking=json` +
+    `&maximumRecords=100` +
+    `&from=${from}` +
+    `&until=${until}`
+  );
+}
 const DOC_PATH = "settings/meeting_notification";
 
 exports.scheduledCheckMeetings = functions.pubsub
@@ -17,15 +31,27 @@ exports.scheduledCheckMeetings = functions.pubsub
       const lastNotifiedDate = doc.exists ? doc.data().lastDate : null;
 
       // 2. API取得
-      const res = await fetch(API_URL);
+      const apiUrl = getApiUrl();
+      const res = await fetch(apiUrl);
       const data = await res.json();
 
       // 3. 最新日付を取得（例: "YYYY-MM-DD" 形式）
       const meetings = data.meetingRecord || [];
       if (meetings.length === 0) return null;
       // 例: 日付で降順ソート
-      meetings.sort((a, b) => (b.date > a.date ? 1 : -1));
-      const newestDate = meetings[0].date;
+      meetings.sort((a, b) => (b.date > a.date ? 1 : -1)); // () で括弧追加済み
+      const newest = meetings[0];
+      const newestDate = newest.date;
+      const sameDateCount =
+        meetings.filter((m) => m.date === newestDate).length;
+      const formattedBody =
+        `${newest.date.replace(/-/g, "/")}` +
+        ` ${newest.nameOfHouse}` +
+        ` ${newest.nameOfMeeting}` +
+        ` ${newest.issue}` +
+        (sameDateCount > 1 ?
+          ` 等${sameDateCount}件` :
+          "");
 
       // 4. 新しいデータがあれば通知
       if (!lastNotifiedDate || newestDate > lastNotifiedDate) {
@@ -33,11 +59,12 @@ exports.scheduledCheckMeetings = functions.pubsub
         await admin.messaging().send({
           topic: "all",
           notification: {
-            title: "新しい本会議が公開されました",
-            body: `日付: ${newestDate}`,
+            title: "新しい会議が公開されました",
+            body: formattedBody,
           },
           data: {
             screen: "meeting",
+            yearMonth: newestDate.slice(0, 7),
           },
         });
         // Firestoreに最新日付を保存
